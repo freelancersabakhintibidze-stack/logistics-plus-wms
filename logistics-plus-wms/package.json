@@ -1,0 +1,36 @@
+{
+  "name": "logistics-plus-wms",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Schema-adaptive warehouse management portal for an existing SQL Server database",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "npm run build:web",
+    "build:web": "ng build --configuration production",
+    "start": "node server/standalone.js",
+    "test": "node --test tests/*.test.js",
+    "check": "node --check api/index.js && node --check server/app.js && node --check server/repository.js && node --check server/schema.js && node --check server/auth.js && node --check server/standalone.js && node --check server/sql-utils.js",
+    "schema:discover": "node scripts/discover-schema.js"
+  },
+  "dependencies": {
+    "@angular/animations": "^19.2.0",
+    "@angular/common": "^19.2.0",
+    "@angular/compiler": "^19.2.0",
+    "@angular/core": "^19.2.0",
+    "@angular/forms": "^19.2.0",
+    "@angular/platform-browser": "^19.2.0",
+    "@angular/router": "^19.2.0",
+    "express": "^4.21.2",
+    "helmet": "^8.0.0",
+    "mssql": "^11.0.1",
+    "rxjs": "^7.8.2",
+    "tslib": "^2.8.1",
+    "zone.js": "^0.15.0"
+  },
+  "devDependencies": {
+    "@angular-devkit/build-angular": "^19.2.0",
+    "@angular/cli": "^19.2.0",
+    "@angular/compiler-cli": "^19.2.0",
+    "typescript": "~5.7.2"
+  }
+}

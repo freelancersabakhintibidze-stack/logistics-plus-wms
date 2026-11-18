@@ -1,0 +1,90 @@
+{
+  "info": {
+    "name": "Logistics Plus WMS API",
+    "description": "No credentials, tokens or secrets are stored in this collection. Set baseUrl per environment and authenticate through your trusted gateway.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://your-deployment.example" },
+    { "key": "orderId", "value": "1" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/health", "host": ["{{baseUrl}}"], "path": ["api", "health"] } }
+    },
+    {
+      "name": "Products",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/products?page=1&pageSize=20&search=&categoryId=&sort=sku&direction=asc",
+          "host": ["{{baseUrl}}"], "path": ["api", "products"],
+          "query": [
+            { "key": "page", "value": "1" }, { "key": "pageSize", "value": "20" },
+            { "key": "search", "value": "" }, { "key": "categoryId", "value": "" },
+            { "key": "sort", "value": "sku" }, { "key": "direction", "value": "asc" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Products CSV export",
+      "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/products/export.csv?search=", "host": ["{{baseUrl}}"], "path": ["api", "products", "export.csv"] } }
+    },
+    {
+      "name": "Inventory",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/inventory?warehouseId=&lowStockOnly=true&lowStockThreshold=10",
+          "host": ["{{baseUrl}}"], "path": ["api", "inventory"],
+          "query": [
+            { "key": "warehouseId", "value": "" }, { "key": "lowStockOnly", "value": "true" },
+            { "key": "lowStockThreshold", "value": "10" }, { "key": "zeroStockOnly", "value": "" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Orders",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/orders?page=1&pageSize=20&status=&customerId=&from=&to=",
+          "host": ["{{baseUrl}}"], "path": ["api", "orders"],
+          "query": [
+            { "key": "page", "value": "1" }, { "key": "pageSize", "value": "20" },
+            { "key": "status", "value": "" }, { "key": "customerId", "value": "" },
+            { "key": "from", "value": "" }, { "key": "to", "value": "" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Order detail",
+      "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/orders/{{orderId}}", "host": ["{{baseUrl}}"], "path": ["api", "orders", "{{orderId}}"] } }
+    },
+    {
+      "name": "Order status (disabled by policy)",
+      "request": {
+        "method": "PATCH",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"status\": \"Packed\"\n}" },
+        "url": { "raw": "{{baseUrl}}/api/orders/{{orderId}}/status", "host": ["{{baseUrl}}"], "path": ["api", "orders", "{{orderId}}", "status"] }
+      }
+    },
+    {
+      "name": "Dashboard",
+      "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/reports/dashboard", "host": ["{{baseUrl}}"], "path": ["api", "reports", "dashboard"] } }
+    },
+    {
+      "name": "Daily orders (not configured)",
+      "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/reports/daily-orders", "host": ["{{baseUrl}}"], "path": ["api", "reports", "daily-orders"] } }
+    },
+    {
+      "name": "Top products (not configured)",
+      "request": { "method": "GET", "url": { "raw": "{{baseUrl}}/api/reports/top-products", "host": ["{{baseUrl}}"], "path": ["api", "reports", "top-products"] } }
+    }
+  ]
+}

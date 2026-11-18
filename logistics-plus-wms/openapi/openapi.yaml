@@ -1,0 +1,385 @@
+openapi: 3.1.0
+info:
+  title: Logistics Plus LLC — Warehouse Management API
+  version: 1.0.0
+  description: |
+    Read-only-by-default REST API over an existing Microsoft SQL Server schema.
+
+    Every identifier in a query is discovered at runtime from INFORMATION_SCHEMA and
+    quoted; every user value is a bound parameter. Responses use a single envelope
+    and a single error shape. Endpoints that would require unverified schema or
+    workflow facts return 501 rather than guessing.
+
+    Authentication is delegated to a trusted enterprise gateway in the deployment
+    environment. Protected endpoints answer 503 until that gateway is configured.
+
+    Naming and method rationale:
+    - Paths are nouns in plural for collections (`/products`, `/orders`).
+    - `GET` is used only for reads; `PATCH` is used for a future partial state change
+      on a single resource. `PATCH` is implemented as a deliberate 501.
+    - Pagination is offset based with `page` (1-indexed) and `pageSize` (max 100),
+      returned in a `pagination` object. Offset paging is chosen because operators
+      need jump-to-page navigation; keyset paging is documented as the next step for
+      very large extracts.
+servers:
+  - url: https://{host}
+    variables:
+      host:
+        default: your-deployment.example
+security:
+  - gatewayAssertion: []
+tags:
+  - name: System
+  - name: Catalog
+  - name: Inventory
+  - name: Orders
+  - name: Reporting
+paths:
+  /api/health:
+    get:
+      tags: [System]
+      summary: Liveness probe
+      description: Never opens a database connection, so it stays cheap and safe to poll.
+      security: []
+      responses:
+        '200':
+          description: Process is responding
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      status: { type: string, example: ok }
+                      database: { type: string, example: not checked }
+                      authentication: { type: string, example: proxy }
+  /api/products:
+    get:
+      tags: [Catalog]
+      summary: Search and page the product catalog
+      parameters:
+        - { in: query, name: page, schema: { type: integer, minimum: 1, default: 1 } }
+        - { in: query, name: pageSize, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - in: query
+          name: search
+          description: Literal substring matched against SKU or product name. Wildcards are escaped and the value is always bound as a parameter.
+          schema: { type: string, maxLength: 200 }
+        - { in: query, name: categoryId, schema: { type: string, maxLength: 100 } }
+        - { in: query, name: sort, schema: { type: string, enum: [sku, name, price] } }
+        - { in: query, name: direction, schema: { type: string, enum: [asc, desc], default: asc } }
+      responses:
+        '200':
+          description: A page of products
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /api/products/export.csv:
+    get:
+      tags: [Catalog]
+      summary: Export the filtered product listing as CSV
+      description: Disabled unless WMS_ENABLE_CSV_EXPORT is true. Bounded to 100 rows and requires an authenticated role. Cells beginning with a formula character are prefixed with an apostrophe.
+      responses:
+        '200':
+          description: UTF-8 CSV attachment
+          content:
+            text/csv:
+              schema: { type: string }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/inventory:
+    get:
+      tags: [Inventory]
+      summary: Read warehouse-level stock balances
+      description: Returns at most 500 rows. `reserved` and `available` are null when the schema has no reserved-quantity column; nothing is inferred.
+      parameters:
+        - { in: query, name: warehouseId, schema: { type: string, maxLength: 100 } }
+        - { in: query, name: lowStockOnly, schema: { type: boolean } }
+        - { in: query, name: lowStockThreshold, schema: { type: number, minimum: 0, default: 10 } }
+        - { in: query, name: zeroStockOnly, schema: { type: boolean } }
+      responses:
+        '200':
+          description: Inventory rows plus which optional capabilities were discovered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/InventoryRow' }
+                  pagination: { $ref: '#/components/schemas/Pagination' }
+                  capabilities:
+                    type: object
+                    properties:
+                      reserved: { type: boolean }
+                      available: { type: boolean }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/orders:
+    get:
+      tags: [Orders]
+      summary: Search and page orders
+      parameters:
+        - { in: query, name: page, schema: { type: integer, minimum: 1, default: 1 } }
+        - { in: query, name: pageSize, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { in: query, name: status, schema: { type: string, maxLength: 100 } }
+        - { in: query, name: customerId, schema: { type: string, maxLength: 100 } }
+        - in: query
+          name: from
+          description: Inclusive lower bound for the order creation date.
+          schema: { type: string, format: date }
+        - in: query
+          name: to
+          description: Inclusive upper bound, evaluated as "less than the next day" so the predicate stays sargable.
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: A page of orders
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/OrderRow' }
+                  pagination: { $ref: '#/components/schemas/Pagination' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/orders/export.csv:
+    get:
+      tags: [Orders]
+      summary: Export the filtered order listing as CSV
+      description: Same policy and safety rules as the product export.
+      responses:
+        '200': { description: UTF-8 CSV attachment }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/orders/{id}:
+    get:
+      tags: [Orders]
+      summary: Read one order with its discoverable line items
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, maxLength: 80, pattern: '^[A-Za-z0-9-]+$' }
+      responses:
+        '200':
+          description: Order header, line items and a reconciliation flag
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/OrderDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/orders/{id}/status:
+    patch:
+      tags: [Orders]
+      summary: Status transition (disabled)
+      description: |
+        Deliberately returns 501. Enabling it requires the approved state graph, the
+        canceled-order invariant, an authorization model and a concurrency token that
+        the existing schema has not been verified to provide.
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              additionalProperties: false
+              properties:
+                status: { type: string, maxLength: 100 }
+      responses:
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '501':
+          description: Read-only schema policy
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /api/reports/dashboard:
+    get:
+      tags: [Reporting]
+      summary: Dashboard aggregates derived from existing records
+      description: Totals come from COUNT/SUM/grouping over the mapped order table. Fields that cannot be mapped are returned as null, never fabricated.
+      responses:
+        '200':
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/DashboardSummary' }
+  /api/reports/daily-orders:
+    get:
+      tags: [Reporting]
+      summary: Daily order volume (not configured)
+      responses:
+        '501':
+          description: Timestamp mapping and business timezone must be approved first
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /api/reports/top-products:
+    get:
+      tags: [Reporting]
+      summary: Top products by order frequency (not configured)
+      responses:
+        '501':
+          description: Order-line to product relationship must be verified first
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+components:
+  securitySchemes:
+    gatewayAssertion:
+      type: apiKey
+      in: header
+      name: x-wms-proxy-key
+      description: |
+        Injected only by the trusted gateway after it authenticates the user and strips
+        client-supplied copies of this header and the identity headers. It is an
+        additional boundary, not a replacement for SSO.
+  responses:
+    BadRequest:
+      description: Validation failure
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Missing or invalid gateway assertion
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Authenticated but not authorized, or a policy-disabled feature
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: No record exists for the identifier, or the identifier is malformed
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unprocessable:
+      description: The requested filter cannot be served by the discovered schema
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unavailable:
+      description: Authentication gateway or schema mapping unavailable
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  schemas:
+    Pagination:
+      type: object
+      properties:
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer }
+        totalPages: { type: integer }
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              enum:
+                - VALIDATION_ERROR
+                - UNAUTHENTICATED
+                - FORBIDDEN
+                - NOT_FOUND
+                - FILTER_UNAVAILABLE
+                - SCHEMA_MAPPING_UNAVAILABLE
+                - SCHEMA_MAPPING_AMBIGUOUS
+                - DB_CONFIG_MISSING
+                - READ_ONLY_SCHEMA_POLICY
+                - REPORT_SCHEMA_REQUIRED
+                - EXPORT_DISABLED
+                - INTERNAL_ERROR
+            message: { type: string }
+    Product:
+      type: object
+      properties:
+        sku: { type: [string, 'null'] }
+        name: { type: [string, 'null'] }
+        categoryId: { type: [string, number, 'null'] }
+        unitPrice: { type: [number, 'null'] }
+        active: { type: [boolean, number, string, 'null'] }
+    ProductPage:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Product' }
+        pagination: { $ref: '#/components/schemas/Pagination' }
+    InventoryRow:
+      type: object
+      properties:
+        productId: { type: [string, number, 'null'] }
+        sku: { type: [string, 'null'] }
+        productName: { type: [string, 'null'] }
+        warehouseId: { type: [string, number, 'null'] }
+        warehouseName: { type: [string, 'null'] }
+        onHand: { type: [number, 'null'] }
+        reserved: { type: [number, 'null'] }
+        available: { type: [number, 'null'], description: On hand minus reserved; null when no reserved column exists }
+    OrderRow:
+      type: object
+      properties:
+        id: { type: [string, number] }
+        orderNumber: { type: [string, 'null'] }
+        customerId: { type: [string, number, 'null'] }
+        status: { type: [string, 'null'] }
+        createdAt: { type: [string, 'null'], format: date-time }
+        totalAmount: { type: [number, 'null'] }
+    OrderItem:
+      type: object
+      properties:
+        orderId: { type: [string, number, 'null'] }
+        productId: { type: [string, number, 'null'] }
+        productName: { type: [string, 'null'] }
+        quantity: { type: [number, 'null'] }
+        unitPrice: { type: [number, 'null'] }
+        subtotal: { type: [number, 'null'] }
+    OrderDetail:
+      allOf:
+        - { $ref: '#/components/schemas/OrderRow' }
+        - type: object
+          properties:
+            items:
+              type: array
+              items: { $ref: '#/components/schemas/OrderItem' }
+            lineItemTotal: { type: [number, 'null'] }
+            totalReconciled: { type: [boolean, 'null'], description: Null when no line amount could be computed }
+    DashboardSummary:
+      type: object
+      properties:
+        totalOrders: { type: integer }
+        pendingOrders: { type: [integer, 'null'] }
+        lowStockItems: { type: [integer, 'null'] }
+        totalOrderValue: { type: [number, 'null'] }
+        ordersByStatus:
+          type: array
+          items:
+            type: object
+            properties:
+              status: { type: [string, 'null'] }
+              count: { type: integer }
+        asOf: { type: string, format: date-time }
+        notes:
+          type: array
+          items: { type: string }
